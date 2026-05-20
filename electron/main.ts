@@ -167,12 +167,22 @@ async function scanDirectory(directoryPath: string, sortField: SortField) {
   }
 
   const entries = await fs.readdir(directoryPath, { withFileTypes: true })
-  const includeDimensions = sortField === 'resolution'
-  const imagePromises = entries
+  const filePaths = entries
     .filter((entry) => entry.isFile())
-    .map((entry) => readImageItem(path.join(directoryPath, entry.name), includeDimensions))
+    .map((entry) => path.join(directoryPath, entry.name))
 
-  const imageItems = await Promise.all(imagePromises)
+  const imageItems: (ImageItem | null)[] = new Array(filePaths.length)
+  const batchSize = 20
+
+  for (let i = 0; i < filePaths.length; i += batchSize) {
+    const batch = filePaths.slice(i, i + batchSize)
+    const batchResults = await Promise.all(batch.map((file) => readImageItem(file, false)))
+    for (let j = 0; j < batchResults.length; j++) {
+      imageItems[i + j] = batchResults[j]
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+
   return imageItems.filter((item): item is ImageItem => item !== null)
 }
 
