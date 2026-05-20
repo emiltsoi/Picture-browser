@@ -108,6 +108,8 @@ export default function App() {
     initialDistance: 0,
     initialZoom: 100,
   })
+  const imageUrlCacheRef = useRef<Record<string, string>>({})
+  const loadedThumbnailPathsRef = useRef<Set<string>>(new Set())
   const [directoryPath, setDirectoryPath] = useState('')
   const [images, setImages] = useState<ImageItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -485,6 +487,8 @@ export default function App() {
       setDirectoryPath(pathToLoad)
       setImages(loadedImages)
       setThumbnailUrls({})
+      loadedThumbnailPathsRef.current.clear()
+      imageUrlCacheRef.current = {}
       setSelectedImageUrl('')
       setPicturePan({ x: 0, y: 0 })
       setSelectedIndex(preferredFilePath ? getSelectedImageIndex(loadedImages, preferredFilePath) : 0)
@@ -564,11 +568,18 @@ export default function App() {
       return
     }
 
+    const cachedUrl = imageUrlCacheRef.current[selectedImage.path]
+    if (cachedUrl) {
+      setSelectedImageUrl(cachedUrl)
+      return
+    }
+
     setIsImageLoading(true)
     let isCancelled = false
 
     void resolveImageUrl(api, selectedImage, false).then((url) => {
       if (!isCancelled) {
+        imageUrlCacheRef.current[selectedImage.path] = url
         setSelectedImageUrl(url)
       }
     }).catch(() => {
@@ -617,11 +628,12 @@ export default function App() {
   useEffect(() => {
     if (!api || sortedImages.length === 0) {
       setThumbnailUrls({})
+      loadedThumbnailPathsRef.current.clear()
       return
     }
 
     const priorityImages = sortedImages.slice(Math.max(0, selectedIndex - 30), Math.min(sortedImages.length, selectedIndex + 31))
-    const pendingImages = priorityImages.filter((item) => !thumbnailUrls[item.path])
+    const pendingImages = priorityImages.filter((item) => !loadedThumbnailPathsRef.current.has(item.path))
 
     if (pendingImages.length === 0) {
       return
@@ -639,6 +651,10 @@ export default function App() {
         return
       }
 
+      for (const [filePath] of entries) {
+        loadedThumbnailPathsRef.current.add(filePath)
+      }
+
       setThumbnailUrls((current) => {
         const next = { ...current }
         for (const [filePath, url] of entries) {
@@ -653,7 +669,7 @@ export default function App() {
     return () => {
       isCancelled = true
     }
-  }, [api, sortedImages, selectedIndex, thumbnailUrls, thumbnailSize])
+  }, [api, sortedImages, selectedIndex, thumbnailSize])
 
   function handleViewerWheel(event: ReactWheelEvent<HTMLDivElement>) {
     if (event.ctrlKey) {
