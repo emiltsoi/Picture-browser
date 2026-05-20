@@ -7,12 +7,8 @@ const MAX_CUSTOM_ZOOM = 800
 const ZOOM_STEP = 10
 
 async function resolveImageUrl(api: NonNullable<typeof window.pictureBrowserAPI>, item: ImageItem, forThumbnail: boolean, thumbnailWidth?: number, thumbnailHeight?: number) {
-  if (item.mimeType === 'image/webp') {
-    if (forThumbnail && thumbnailWidth !== undefined && thumbnailHeight !== undefined) {
-      return api.toThumbnailDataUrl(item.path, thumbnailWidth, thumbnailHeight)
-    }
-
-    return api.toDataUrl(item.path)
+  if (forThumbnail && thumbnailWidth !== undefined && thumbnailHeight !== undefined) {
+    return api.toThumbnailDataUrl(item.path, thumbnailWidth, thumbnailHeight)
   }
 
   return api.toFileUrl(item.path)
