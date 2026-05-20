@@ -564,14 +564,15 @@ export default function App() {
       return
     }
 
+    setNaturalImageSize({ width: 0, height: 0 })
+    setIsImageLoading(true)
+    let isCancelled = false
+
     const cachedUrl = imageUrlCacheRef.current[selectedImage.path]
     if (cachedUrl) {
       setSelectedImageUrl(cachedUrl)
       return
     }
-
-    setIsImageLoading(true)
-    let isCancelled = false
 
     void resolveImageUrl(api, selectedImage, false).then((url) => {
       if (!isCancelled) {
