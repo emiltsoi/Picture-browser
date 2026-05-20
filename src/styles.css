@@ -192,8 +192,6 @@ button {
   background: #1a1a1a;
   color: #f2f2f2;
   text-align: left;
-  content-visibility: auto;
-  contain-intrinsic-size: 0 110px;
 }
 
 .thumbnail-card:hover {

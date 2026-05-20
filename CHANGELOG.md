@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fit screen mode now scales up small images to fill the viewport (previously only shrank large images)
+- Thumbnail sidebar scrollbar now accurately reflects file list position
+
+### Changed
+- Removed `content-visibility: auto` from thumbnail cards for accurate scroll calculations
 
 ## [1.0.1] - 2026-05-21
 
