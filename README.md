@@ -1,5 +1,8 @@
 # Picture Browser
 
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Picture Browser is a desktop image viewer built with Electron, React, TypeScript, and Vite. It is designed for fast local browsing, Windows network shares, thumbnail navigation, fullscreen viewing, and precise zoom/pan control.
 
 ## Features
@@ -11,7 +14,7 @@ Picture Browser is a desktop image viewer built with Electron, React, TypeScript
 - Ascending and descending sorting
 - Fullscreen mode
 - Picture mode for distraction-free viewing
-- Fit modes: actual size, fit width, fit height, fit screen, and custom zoom
+- Fit modes: actual size, fit width, fit height, fit screen (scales images to fill the viewport), and custom zoom
 - Ctrl + mouse wheel zoom
 - Mouse drag panning for oversized images
 - Clamped picture-mode panning so the image stops at its edges
@@ -131,6 +134,35 @@ Generated folders such as `node_modules`, `dist`, `dist-electron`, and `release`
 | `npm run build:electron` | Compile Electron TypeScript |
 | `npm run preview` | Preview the Vite renderer build |
 | `npm run dist:win` | Build the Windows x64 installer |
+
+## GitHub Releases
+
+This project uses GitHub Releases for distribution. Each release includes:
+
+- **Windows**: `Picture Browser Setup {version}.exe` - NSIS installer for Windows x64
+- **macOS**: `.dmg` disk image (when built on macOS)
+- **Linux**: `.AppImage` and `.deb` packages (when built on Linux)
+
+### Release Workflow
+
+1. Update version in `package.json`
+2. Update `CHANGELOG.md` with changes since last release
+3. Commit changes: `git add -A && git commit -m "Release v{version}"`
+4. Create and push tag: `git tag v{version} && git push origin v{version}`
+5. GitHub Actions will automatically build and attach installers to the release
+
+### Manual Release Build
+
+```bash
+# Windows
+npm run dist:win
+
+# macOS (requires macOS)
+npm run dist:mac
+
+# Linux (requires Linux)
+npm run dist:linux
+```
 
 ## Notes
 

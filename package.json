@@ -1,6 +1,8 @@
 {
   "name": "picture-browser",
-  "version": "1.0.0",
+  "version": "1.0.2",
+  "description": "A fast desktop image viewer built with Electron, React, and TypeScript",
+  "author": "Emil Tsoi",
   "private": true,
   "main": "dist-electron/main.js",
   "type": "module",
@@ -12,7 +14,11 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
-    "dist:win": "npm run build && electron-builder --win nsis --x64"
+    "test": "vitest",
+    "test:run": "vitest run",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:mac": "npm run build && electron-builder --mac dmg --x64",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb --x64"
   },
   "dependencies": {
     "image-size": "1.2.1",
@@ -24,12 +30,14 @@
     "@types/react": "18.3.20",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.4.1",
+    "@vitest/ui": "^4.1.7",
     "concurrently": "9.1.2",
     "cross-env": "7.0.3",
     "electron": "35.2.0",
     "electron-builder": "25.1.8",
     "typescript": "5.8.3",
     "vite": "6.3.5",
+    "vitest": "^4.1.7",
     "wait-on": "8.0.3"
   },
   "build": {
@@ -53,6 +61,35 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.photography"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Graphics"
     },
     "nsis": {
       "oneClick": false,

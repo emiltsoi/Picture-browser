@@ -176,7 +176,67 @@ async function scanDirectory(directoryPath: string, sortField: SortField) {
   return imageItems.filter((item): item is ImageItem => item !== null)
 }
 
+const gotTheLock = app.requestSingleInstanceLock()
+
+let initialFilePath: string | null = null
+let pendingOpenFilePath: string | null = null
+
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+      }
+      mainWindow.focus()
+
+      const filePath = commandLine.find((arg) => {
+        const ext = path.extname(arg).toLowerCase()
+        return supportedExtensions.has(ext)
+      })
+
+      if (filePath) {
+        mainWindow.webContents.send('file:opened-from-association', filePath)
+      }
+    }
+  })
+}
+
+if (process.platform === 'darwin') {
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    const ext = path.extname(filePath).toLowerCase()
+    if (supportedExtensions.has(ext)) {
+      if (app.isReady()) {
+        if (mainWindow) {
+          mainWindow.webContents.send('file:opened-from-association', filePath)
+        }
+      } else {
+        pendingOpenFilePath = filePath
+      }
+    }
+  })
+}
+
+initialFilePath = (() => {
+  const filePath = process.argv.find((arg) => {
+    const ext = path.extname(arg).toLowerCase()
+    return supportedExtensions.has(ext)
+  })
+  return filePath ?? null
+})()
+
 app.whenReady().then(() => {
+  if (pendingOpenFilePath) {
+    initialFilePath = pendingOpenFilePath
+    pendingOpenFilePath = null
+  }
+
+  if (initialFilePath) {
+    ipcMain.handle('file:get-initial-path', () => initialFilePath)
+  }
+
   ipcMain.handle('directory:pick', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],

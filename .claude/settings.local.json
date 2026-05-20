@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npm uninstall *)",
+      "Bash(git checkout *)",
+      "Bash(npm ls *)",
+      "Bash(npx electron *)",
+      "Bash(npx asar *)"
+    ]
+  }
+}

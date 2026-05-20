@@ -6,10 +6,10 @@ const MIN_CUSTOM_ZOOM = 10
 const MAX_CUSTOM_ZOOM = 800
 const ZOOM_STEP = 10
 
-async function resolveImageUrl(api: NonNullable<typeof window.pictureBrowserAPI>, item: ImageItem, forThumbnail: boolean) {
+async function resolveImageUrl(api: NonNullable<typeof window.pictureBrowserAPI>, item: ImageItem, forThumbnail: boolean, thumbnailWidth?: number, thumbnailHeight?: number) {
   if (item.mimeType === 'image/webp') {
-    if (forThumbnail) {
-      return api.toThumbnailDataUrl(item.path, 96, 72)
+    if (forThumbnail && thumbnailWidth !== undefined && thumbnailHeight !== undefined) {
+      return api.toThumbnailDataUrl(item.path, thumbnailWidth, thumbnailHeight)
     }
 
     return api.toDataUrl(item.path)
@@ -103,6 +103,11 @@ export default function App() {
     panX: 0,
     panY: 0,
   })
+  const pointerStateRef = useRef<{ activePointers: Map<number, { x: number; y: number }>; initialDistance: number; initialZoom: number }>({
+    activePointers: new Map(),
+    initialDistance: 0,
+    initialZoom: 100,
+  })
   const [directoryPath, setDirectoryPath] = useState('')
   const [images, setImages] = useState<ImageItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -114,13 +119,34 @@ export default function App() {
   const [isPictureMode, setIsPictureMode] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isImageLoading, setIsImageLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedImageUrl, setSelectedImageUrl] = useState('')
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
   const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 })
   const [picturePan, setPicturePan] = useState({ x: 0, y: 0 })
+  const [thumbnailSize, setThumbnailSize] = useState<{ width: number; height: number }>({ width: 96, height: 72 })
 
-  const selectedImage = images[selectedIndex] ?? null
+  const sortedImages = useMemo(() => {
+    const sorted = [...images].sort((a, b) => {
+      if (sortField === 'name') {
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      }
+      if (sortField === 'size') {
+        return a.size - b.size
+      }
+      if (sortField === 'modified') {
+        return a.modifiedTime - b.modifiedTime
+      }
+      if (a.resolution === null && b.resolution === null) return 0
+      if (a.resolution === null) return -1
+      if (b.resolution === null) return 1
+      return a.resolution - b.resolution
+    })
+    return sortDirection === 'asc' ? sorted : sorted.reverse()
+  }, [images, sortField, sortDirection])
+
+  const selectedImage = sortedImages[selectedIndex] ?? null
   const viewerClassName = `${getViewerClassName(fitMode)}${isPictureMode ? ' viewer-image-picture-mode' : ''}`
   const viewerStageClassName = `viewer-stage viewer-stage-${fitMode}${isPictureMode ? ' viewer-stage-picture-mode' : ''}`
   const viewerCanvasClassName = `viewer-canvas viewer-canvas-${fitMode}${isPictureMode ? ' viewer-canvas-picture-mode' : ''}`
@@ -249,7 +275,7 @@ export default function App() {
   }
 
   function goToNextImage() {
-    setSelectedIndex((current: number) => Math.min(current + 1, Math.max(images.length - 1, 0)))
+    setSelectedIndex((current: number) => Math.min(current + 1, Math.max(sortedImages.length - 1, 0)))
   }
 
   const statusText = useMemo(() => {
@@ -257,8 +283,8 @@ export default function App() {
       return 'No images loaded'
     }
 
-    return `${selectedIndex + 1} / ${images.length}`
-  }, [images.length, selectedIndex])
+    return `${selectedIndex + 1} / ${sortedImages.length}`
+  }, [sortedImages.length, selectedIndex])
 
   useEffect(() => {
     if (!api) {
@@ -267,6 +293,48 @@ export default function App() {
     }
 
     void api.isFullscreen().then(setIsFullscreen)
+
+    void api.getInitialFilePath().then((initialPath) => {
+      if (initialPath) {
+        const parentDirectory = getParentDirectory(initialPath)
+        void loadDirectory(parentDirectory, initialPath)
+      }
+    })
+
+    const cleanupFileAssoc = api.onFileOpenedFromAssociation((filePath) => {
+      const parentDirectory = getParentDirectory(filePath)
+      void loadDirectory(parentDirectory, filePath)
+    })
+
+    return cleanupFileAssoc
+  }, [])
+
+  useEffect(() => {
+    if (!api) {
+      return
+    }
+
+    const cleanup = api.onMenuAction((action) => {
+      switch (action) {
+        case 'open-folder':
+          void handleBrowse()
+          break
+        case 'open-picture':
+          void handleOpenPicture()
+          break
+        case 'toggle-fullscreen':
+          void handleToggleFullscreen()
+          break
+        case 'toggle-picture-mode':
+          void handleTogglePictureMode()
+          break
+        case 'show-help':
+          setIsHelpOpen(true)
+          break
+      }
+    })
+
+    return cleanup
   }, [])
 
   useEffect(() => {
@@ -299,7 +367,7 @@ export default function App() {
 
       if (event.key === 'End') {
         event.preventDefault()
-        setSelectedIndex(Math.max(images.length - 1, 0))
+        setSelectedIndex(Math.max(sortedImages.length - 1, 0))
         return
       }
 
@@ -349,7 +417,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [images.length, isHelpOpen, isPictureMode])
+  }, [sortedImages.length, isHelpOpen, isPictureMode])
 
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
@@ -489,20 +557,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!directoryPath) {
-      return
-    }
-
-    void loadDirectory(directoryPath)
-  }, [sortField, sortDirection])
-
-  useEffect(() => {
     if (!api || !selectedImage) {
       setSelectedImageUrl('')
       setNaturalImageSize({ width: 0, height: 0 })
+      setIsImageLoading(false)
       return
     }
 
+    setIsImageLoading(true)
     let isCancelled = false
 
     void resolveImageUrl(api, selectedImage, false).then((url) => {
@@ -539,22 +601,26 @@ export default function App() {
   }, [isPictureMode, selectedImageUrl, fitMode, customZoomPercent, naturalImageSize.width, naturalImageSize.height])
 
   useEffect(() => {
-    const thumbnailList = thumbnailListRef.current
-    const selectedThumbnail = thumbnailList?.querySelector<HTMLButtonElement>('.thumbnail-card-selected')
+    const list = thumbnailListRef.current
+    const selectedThumbnail = list?.querySelector<HTMLButtonElement>('.thumbnail-card-selected')
 
     selectedThumbnail?.scrollIntoView({
       block: 'center',
       inline: 'nearest',
     })
-  }, [selectedIndex, images])
+  }, [selectedIndex, sortedImages])
 
   useEffect(() => {
-    if (!api || images.length === 0) {
+    setThumbnailUrls({})
+  }, [thumbnailSize])
+
+  useEffect(() => {
+    if (!api || sortedImages.length === 0) {
       setThumbnailUrls({})
       return
     }
 
-    const priorityImages = images.slice(Math.max(0, selectedIndex - 30), Math.min(images.length, selectedIndex + 31))
+    const priorityImages = sortedImages.slice(Math.max(0, selectedIndex - 30), Math.min(sortedImages.length, selectedIndex + 31))
     const pendingImages = priorityImages.filter((item) => !thumbnailUrls[item.path])
 
     if (pendingImages.length === 0) {
@@ -565,7 +631,7 @@ export default function App() {
 
     void Promise.all(
       pendingImages.map(async (item) => {
-        const url = await resolveImageUrl(api, item, true)
+        const url = await resolveImageUrl(api, item, true, thumbnailSize.width, thumbnailSize.height)
         return [item.path, url] as const
       }),
     ).then((entries) => {
@@ -580,13 +646,14 @@ export default function App() {
         }
         return next
       })
-    }).catch(() => {
+    }).catch((err) => {
+      console.error('Failed to load thumbnails:', err)
     })
 
     return () => {
       isCancelled = true
     }
-  }, [api, images, selectedIndex, thumbnailUrls])
+  }, [api, sortedImages, selectedIndex, thumbnailUrls, thumbnailSize])
 
   function handleViewerWheel(event: ReactWheelEvent<HTMLDivElement>) {
     if (event.ctrlKey) {
@@ -610,6 +677,54 @@ export default function App() {
     }
 
     goToPreviousImage()
+  }
+
+  function handleViewerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    const stage = event.currentTarget as HTMLDivElement
+    pointerStateRef.current.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    if (pointerStateRef.current.activePointers.size === 2) {
+      const pointers = Array.from(pointerStateRef.current.activePointers.values())
+      const dx = pointers[1].x - pointers[0].x
+      const dy = pointers[1].y - pointers[0].y
+      pointerStateRef.current.initialDistance = Math.sqrt(dx * dx + dy * dy)
+      pointerStateRef.current.initialZoom = getCurrentDisplayZoomPercent()
+      stage.setPointerCapture(event.pointerId)
+    }
+  }
+
+  function handleViewerPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const pointers = pointerStateRef.current.activePointers
+
+    if (pointers.size === 2 && pointers.has(event.pointerId)) {
+      const otherId = Array.from(pointers.keys()).find((id) => id !== event.pointerId)
+      if (otherId === undefined) return
+
+      const other = pointers.get(otherId)
+      if (!other) return
+
+      const dx = other.x - event.clientX
+      const dy = other.y - event.clientY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      if (pointerStateRef.current.initialDistance > 0) {
+        const scale = distance / pointerStateRef.current.initialDistance
+        const newZoom = clampZoomPercent(pointerStateRef.current.initialZoom * scale)
+        setCustomZoomPercent(newZoom)
+        if (fitMode !== 'custom') {
+          setFitMode('custom')
+        }
+      }
+
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    }
+  }
+
+  function handleViewerPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    pointerStateRef.current.activePointers.delete(event.pointerId)
+    if (pointerStateRef.current.activePointers.size < 2) {
+      pointerStateRef.current.initialDistance = 0
+    }
   }
 
   function handleViewerMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
@@ -653,7 +768,7 @@ export default function App() {
             className="path-input"
             value={directoryPath}
             onChange={(event) => setDirectoryPath(event.target.value)}
-            placeholder="Enter local path or network path, e.g. C:\\Pictures or \\\\server\\share"
+            placeholder="Enter local path or network path, e.g. /home/user/Pictures, /Volumes/server/share, or C:\\Pictures"
           />
           <button className="toolbar-button" onClick={() => void loadDirectory()} disabled={isLoading}>
             Open
@@ -692,6 +807,21 @@ export default function App() {
               ))}
             </select>
           </label>
+          <label className="control-group">
+            <span>Thumbnails</span>
+            <select
+              value={`${thumbnailSize.width}x${thumbnailSize.height}`}
+              onChange={(event) => {
+                const [w, h] = event.target.value.split('x').map(Number)
+                setThumbnailSize({ width: w, height: h })
+              }}
+            >
+              <option value="64x48">Small</option>
+              <option value="96x72">Medium</option>
+              <option value="128x96">Large</option>
+              <option value="192x144">Extra Large</option>
+            </select>
+          </label>
           {fitMode === 'custom' ? (
             <label className="control-group control-group-zoom">
               <span>Zoom</span>
@@ -725,8 +855,15 @@ export default function App() {
             <span>{statusText}</span>
             {isLoading ? <span>Loading...</span> : null}
           </div>
-          <div ref={thumbnailListRef} className="thumbnail-list">
-            {images.map((image, index) => (
+          <div
+            ref={thumbnailListRef}
+            className="thumbnail-list"
+            style={{
+              '--thumbnail-width': `${thumbnailSize.width}px`,
+              '--thumbnail-height': `${thumbnailSize.height}px`,
+            } as React.CSSProperties}
+          >
+            {sortedImages.map((image, index) => (
               <button
                 key={image.path}
                 className={`thumbnail-card${index === selectedIndex ? ' thumbnail-card-selected' : ''}`}
@@ -752,6 +889,10 @@ export default function App() {
                 className={viewerStageClassName}
                 onWheel={handleViewerWheel}
                 onMouseDown={handleViewerMouseDown}
+                onPointerDown={handleViewerPointerDown}
+                onPointerMove={handleViewerPointerMove}
+                onPointerUp={handleViewerPointerUp}
+                onPointerCancel={handleViewerPointerUp}
               >
                 <div className={viewerCanvasClassName}>
                   <img
@@ -761,9 +902,18 @@ export default function App() {
                     src={selectedImageUrl}
                     alt={selectedImage.name}
                     draggable={false}
-                    onLoad={(event) => setNaturalImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+                    onLoad={(event) => {
+                      setNaturalImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
+                      setIsImageLoading(false)
+                    }}
+                    onError={() => setIsImageLoading(false)}
                     onDragStart={(event) => event.preventDefault()}
                   />
+                  {isImageLoading ? (
+                    <div className="viewer-loading">
+                      <div className="viewer-loading-spinner" />
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className={`viewer-info-bar${isPictureMode ? ' viewer-info-bar-hidden' : ''}`}>
